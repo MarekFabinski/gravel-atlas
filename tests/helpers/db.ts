@@ -4,7 +4,13 @@ import { runMigrations } from '@/lib/migrate';
 export const TEST_DB_URL = process.env.TEST_DATABASE_URL;
 
 export function testDb(): postgres.Sql {
-  if (!TEST_DB_URL) throw new Error('TEST_DATABASE_URL not set');
+  // Vitest evaluates describe.skip(...) factory bodies even though the
+  // contained tests never run, so testDb() gets called during skipped
+  // suites too. It must never throw here: when TEST_DATABASE_URL is unset,
+  // return a harmless client instead. The `postgres` library connects
+  // lazily, so this never opens a real connection, and skipped suites
+  // never issue a query against it.
+  if (!TEST_DB_URL) return postgres('postgres://skip:skip@localhost:9/skip', { max: 1 });
   return postgres(TEST_DB_URL, { ssl: false, max: 2, onnotice: () => {} });
 }
 
