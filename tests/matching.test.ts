@@ -64,4 +64,12 @@ d('matchRide', () => {
     expect(second.newLenM).toBe(0);
     expect(second.unpavedM).toBeGreaterThan(150); // still riding gravel
   });
+
+  it('does not throw on a zero-length segment and still claims segment A', async () => {
+    await insertSegment(sql, { wayId: 99, wkt: `LINESTRING(${LON0} ${LAT}, ${LON0} ${LAT})` }); // degenerate, zero-length
+    const rideId = await insertRide(sql, { stravaId: 15 });
+    const t = track(line([LON0, LAT], [LON0 + M200_LON, LAT]));
+    const result = await matchRide(sql, rideId, t, CLAIMED_AT);
+    expect(result.newCount).toBe(1);
+  });
 });

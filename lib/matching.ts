@@ -31,7 +31,7 @@ export async function matchRide(
       INSERT INTO claims (segment_id, ride_id, claimed_at)
       SELECT id, ${rideId}, ${claimedAt}
       FROM cov
-      WHERE overlap_m / length_m >= ${COVERAGE_MIN}
+      WHERE overlap_m / NULLIF(length_m, 0) >= ${COVERAGE_MIN}
       ON CONFLICT (segment_id) DO NOTHING
       RETURNING segment_id
     )
