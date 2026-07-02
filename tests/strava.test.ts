@@ -18,7 +18,7 @@ describe('strava client', () => {
   });
 
   it('refreshTokens posts the refresh grant and returns tokens', async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({
       access_token: 'new-at', refresh_token: 'new-rt', expires_at: 1750000000,
     }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
