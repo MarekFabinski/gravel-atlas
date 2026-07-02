@@ -8,5 +8,9 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
     testTimeout: 30000,
     hookTimeout: 30000,
+    // Multiple test files share one Postgres test DB and TRUNCATE it in
+    // resetDb(); running files in parallel races those truncations against
+    // concurrent inserts in other files. Serialize file execution instead.
+    fileParallelism: false,
   },
 });
