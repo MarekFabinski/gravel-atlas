@@ -20,7 +20,10 @@ export async function getStats(): Promise<Stats> {
     FROM segments s LEFT JOIN claims c ON c.segment_id = s.id`;
 
   const gminaRows = await sql`
-    SELECT COALESCE(s.gmina, '(unknown)') AS gmina,
+    SELECT COALESCE(
+             regexp_replace(s.gmina, '^[Gg]mina\\s+', ''),
+             '(unknown)'
+           ) AS gmina,
            COALESCE(SUM(s.length_m) FILTER (WHERE c.segment_id IS NOT NULL), 0)::float AS claimed_m,
            COALESCE(SUM(s.length_m), 0)::float AS total_m
     FROM segments s LEFT JOIN claims c ON c.segment_id = s.id

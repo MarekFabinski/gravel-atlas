@@ -10,6 +10,15 @@ const PAINT = '#e8590c';
 
 type StatsLite = { completion: { pct: number } };
 
+// Segment name/surface come from OSM data and end up in a popup built with
+// setHTML — escape them so an untrusted `name` (e.g. containing `<img
+// onerror=...>`) can't inject markup into the page.
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!
+  ));
+}
+
 function buildFilter(claimed: boolean, unpavedOnly: boolean): maplibregl.FilterSpecification {
   return unpavedOnly
     ? ['all', ['==', ['get', 'claimed'], claimed], ['==', ['get', 'surface'], 'unpaved']]
@@ -65,8 +74,9 @@ export default function MapPage() {
           new maplibregl.Popup()
             .setLngLat(e.lngLat)
             .setHTML(
-              `<strong>${p.name || 'Unnamed'}</strong><br/>` +
-              `${p.surface} · ${p.length_m} m · ${p.claimed === true || p.claimed === 'true' ? 'claimed ✅' : 'unclaimed'}`
+              `<strong>${escapeHtml(String(p.name || 'Unnamed'))}</strong><br/>` +
+              `${escapeHtml(String(p.surface))} · ${Number(p.length_m)} m · ` +
+              `${p.claimed === true || p.claimed === 'true' ? 'claimed ✅' : 'unclaimed'}`
             )
             .addTo(map);
         });
