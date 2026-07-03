@@ -40,19 +40,32 @@ export async function POST() {
       lastPageFull = activities.length >= PER_PAGE;
       if (activities.length === 0) break;
 
+      const todoBefore = todo.length;
       for (const a of activities) {
         if (!isImportable(a)) continue;
         const exists = await sql`SELECT 1 FROM rides WHERE strava_activity_id = ${a.id}`;
         if (!exists.length) todo.push(a);
         if (todo.length >= BATCH) break;
       }
+      // Only a page that contributed NOTHING to `todo` is a pure stall page
+      // — safe to persist the cursor past it. A page that contributed 1-4
+      // importable activities (not enough to hit BATCH) must NOT advance
+      // the persisted cursor here: those activities haven't been imported
+      // yet, and if this request dies before the import loop below runs
+      // (e.g. the next page fetch below throws RATE_LIMITED), persisting
+      // would leave them permanently behind the cursor with no trace. The
+      // in-memory `after` still advances so this request's own paging keeps
+      // moving forward.
+      const pageStalled = todo.length === todoBefore;
 
       if (todo.length >= BATCH) break;
       if (!lastPageFull) break;
 
       after = epoch(activities[activities.length - 1].start_date);
-      await sql`UPDATE strava_tokens SET sync_cursor = ${after} WHERE id = 1`;
-      cursorAdvanced = true;
+      if (pageStalled) {
+        await sql`UPDATE strava_tokens SET sync_cursor = ${after} WHERE id = 1`;
+        cursorAdvanced = true;
+      }
     }
 
     let imported = 0;
@@ -107,13 +120,12 @@ export async function POST() {
       }
     }
 
-    // Keep the cursor monotonic with the rides watermark it's meant to
-    // complement — redundant with MAX(started_at) once rides land, but
-    // harmless, and keeps GREATEST(watermark, cursor) correct either way.
-    if (imported > 0) {
-      const maxEpoch = Math.max(...todo.map((a) => epoch(a.start_date)));
-      await sql`UPDATE strava_tokens SET sync_cursor = GREATEST(sync_cursor, ${maxEpoch}) WHERE id = 1`;
-    }
+    // No post-import cursor bump: todo-bearing pages progress via the rides
+    // watermark (MAX(started_at), which includes skipped_no_gps rows) once
+    // imports land — the cursor itself never advances past a todo-bearing
+    // page (see pageStalled above). That leaves activities whose
+    // fetchStreams threw transiently still retryable on the next sync,
+    // since the cursor never passed them either.
 
     // More work remains if we truncated the batch or the last page we
     // fetched was full — but only claim so when this call made progress

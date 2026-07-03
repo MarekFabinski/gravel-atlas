@@ -198,4 +198,62 @@ d('POST /api/sync', () => {
     const body = await res.json();
     expect(body).toEqual({ rateLimited: true });
   });
+
+  it('does not lose todo activities behind the cursor when a later page rate-limits before import', async () => {
+    await seedSegment(sql);
+
+    // A full (PER_PAGE=50) page: 48 non-importable runs plus 2 importable
+    // rides — not enough to hit BATCH(5), so under the old buggy logic the
+    // page's fullness alone was enough to persist the cursor past it,
+    // before either ride was ever imported.
+    const runs = Array.from({ length: 48 }, (_, i) =>
+      activity({
+        sport_type: 'Run',
+        start_date: new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString(),
+      })
+    );
+    const rideX = activity({ start_date: new Date(Date.UTC(2026, 0, 1, 1, 0)).toISOString() });
+    const rideY = activity({ start_date: new Date(Date.UTC(2026, 0, 1, 1, 1)).toISOString() });
+    const page1 = [...runs, rideX, rideY];
+    expect(page1.length).toBe(50);
+
+    vi.mocked(strava.fetchActivities)
+      .mockResolvedValueOnce(page1)
+      .mockRejectedValueOnce(strava.RATE_LIMITED); // page 2 fetch dies
+
+    const res1 = await POST();
+    expect(res1.status).toBe(429);
+    const body1 = await res1.json();
+    expect(body1).toEqual({ rateLimited: true });
+
+    // Neither ride was imported...
+    const rows1 = await sql`
+      SELECT 1 FROM rides WHERE strava_activity_id IN (${rideX.id}, ${rideY.id})`;
+    expect(rows1.length).toBe(0);
+    // ...and critically, the cursor must not have advanced past them, or a
+    // future sync would never see them again.
+    const [{ sync_cursor: cursorAfterFirst }] =
+      await sql`SELECT sync_cursor::bigint AS sync_cursor FROM strava_tokens WHERE id = 1`;
+    expect(Number(cursorAfterFirst)).toBe(0);
+
+    // Second request, fresh mocks: the same two importable rides come back
+    // (as they would from Strava, since the cursor never moved past them),
+    // followed by a short/empty page to end paging. Both must import.
+    vi.mocked(strava.fetchActivities).mockReset();
+    vi.mocked(strava.fetchActivities)
+      .mockResolvedValueOnce([rideX, rideY])
+      .mockResolvedValueOnce([]);
+    vi.mocked(strava.fetchStreams).mockReset()
+      .mockResolvedValue({ latlng: { data: FIXTURE_LATLNG } });
+
+    const res2 = await POST();
+    expect(res2.status).toBe(200);
+    const body2 = await res2.json();
+    expect(body2.imported).toBe(2);
+
+    const rows2 = await sql`
+      SELECT status FROM rides WHERE strava_activity_id IN (${rideX.id}, ${rideY.id})`;
+    expect(rows2.length).toBe(2);
+    expect(rows2.every((r) => r.status === 'imported')).toBe(true);
+  });
 });
