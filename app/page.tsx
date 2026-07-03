@@ -10,11 +10,20 @@ const PAINT = '#e8590c';
 
 type StatsLite = { completion: { pct: number } };
 
+function buildFilter(claimed: boolean, unpavedOnly: boolean): maplibregl.FilterSpecification {
+  return unpavedOnly
+    ? ['all', ['==', ['get', 'claimed'], claimed], ['==', ['get', 'surface'], 'unpaved']]
+    : ['==', ['get', 'claimed'], claimed];
+}
+
 export default function MapPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [unpavedOnly, setUnpavedOnly] = useState(false);
   const [stats, setStats] = useState<StatsLite | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const unpavedRef = useRef(unpavedOnly);
+  unpavedRef.current = unpavedOnly;
 
   useEffect(() => {
     const map = new maplibregl.Map({
@@ -37,15 +46,16 @@ export default function MapPage() {
     mapRef.current = map;
 
     map.on('load', () => {
+      if (map !== mapRef.current) return;
       map.addSource('segments', { type: 'geojson', data: '/api/segments' });
       map.addLayer({
         id: 'seg-grey', type: 'line', source: 'segments',
-        filter: ['==', ['get', 'claimed'], false],
+        filter: buildFilter(false, unpavedRef.current),
         paint: { 'line-color': GREY, 'line-width': 1.5 },
       });
       map.addLayer({
         id: 'seg-claimed', type: 'line', source: 'segments',
-        filter: ['==', ['get', 'claimed'], true],
+        filter: buildFilter(true, unpavedRef.current),
         paint: { 'line-color': PAINT, 'line-width': 2.5 },
       });
       for (const layer of ['seg-grey', 'seg-claimed']) {
@@ -63,25 +73,25 @@ export default function MapPage() {
         map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
       }
+      setLoaded(true);
     });
 
     fetch('/api/stats').then((r) => r.json()).then(setStats);
-    return () => map.remove();
+    return () => {
+      map.remove();
+      mapRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.getLayer('seg-grey')) return;
-    const withSurface = (claimed: boolean): maplibregl.FilterSpecification =>
-      unpavedOnly
-        ? ['all', ['==', ['get', 'claimed'], claimed], ['==', ['get', 'surface'], 'unpaved']]
-        : ['==', ['get', 'claimed'], claimed];
-    map.setFilter('seg-grey', withSurface(false));
-    map.setFilter('seg-claimed', withSurface(true));
-  }, [unpavedOnly]);
+    if (!map || !loaded || !map.getLayer('seg-grey')) return;
+    map.setFilter('seg-grey', buildFilter(false, unpavedOnly));
+    map.setFilter('seg-claimed', buildFilter(true, unpavedOnly));
+  }, [unpavedOnly, loaded]);
 
   return (
-    <main style={{ position: 'relative', height: 'calc(100vh - 45px)' }}>
+    <main style={{ position: 'relative', flex: 1, minHeight: 0 }}>
       <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
       <div style={{
         position: 'absolute', top: 12, left: 12, zIndex: 1, background: 'white',

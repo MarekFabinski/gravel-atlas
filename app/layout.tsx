@@ -8,9 +8,12 @@ export const metadata: Metadata = { title: 'Gravel Atlas' };
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body style={{ margin: 0, fontFamily: 'system-ui' }}>
+      <body style={{
+        margin: 0, fontFamily: 'system-ui',
+        display: 'flex', flexDirection: 'column', minHeight: '100dvh',
+      }}>
         <header style={{
-          display: 'flex', alignItems: 'center', gap: 16, padding: '8px 16px',
+          display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, padding: '8px 16px',
           borderBottom: '1px solid #ddd',
         }}>
           <strong>🚵 Gravel Atlas</strong>
