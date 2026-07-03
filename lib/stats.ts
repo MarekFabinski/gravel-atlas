@@ -13,6 +13,24 @@ export type Stats = {
 
 const pct = (claimed: number, total: number) => (total > 0 ? (claimed / total) * 100 : 0);
 
+// Some gminas legitimately come in both a city (e.g. "Ustka") and a
+// surrounding rural ("gmina Ustka") flavor — two distinct administrative
+// units, verified against the dev DB (Ustka/gmina Ustka, Darłowo/gmina
+// Darłowo, Sławno/gmina Sławno all exist as separate raw names). Stripping
+// the "gmina " prefix before GROUP BY would silently merge their totals, so
+// grouping happens on the raw name; this only *displays* the stripped form,
+// and only when it's unambiguous.
+const GMINA_PREFIX = /^[Gg]mina\s+(.+)$/;
+
+function displayGmina(raw: string, rawNames: Set<string>): string {
+  const m = GMINA_PREFIX.exec(raw);
+  if (!m) return raw;
+  const stripped = m[1];
+  // A same-named city bucket already exists as its own raw entry — keep
+  // both distinguishable rather than colliding their labels.
+  return rawNames.has(stripped) ? `${stripped} (gmina)` : stripped;
+}
+
 export async function getStats(): Promise<Stats> {
   const [overall] = await sql`
     SELECT COALESCE(SUM(s.length_m) FILTER (WHERE c.segment_id IS NOT NULL), 0)::float AS claimed_m,
@@ -20,14 +38,13 @@ export async function getStats(): Promise<Stats> {
     FROM segments s LEFT JOIN claims c ON c.segment_id = s.id`;
 
   const gminaRows = await sql`
-    SELECT COALESCE(
-             regexp_replace(s.gmina, '^[Gg]mina\\s+', ''),
-             '(unknown)'
-           ) AS gmina,
+    SELECT COALESCE(s.gmina, '(unknown)') AS gmina,
            COALESCE(SUM(s.length_m) FILTER (WHERE c.segment_id IS NOT NULL), 0)::float AS claimed_m,
            COALESCE(SUM(s.length_m), 0)::float AS total_m
     FROM segments s LEFT JOIN claims c ON c.segment_id = s.id
     GROUP BY 1 ORDER BY 1`;
+
+  const rawGminaNames = new Set(gminaRows.map((g) => g.gmina as string));
 
   const [rides] = await sql`
     SELECT COALESCE(SUM(xp), 0)::int AS xp,
@@ -46,7 +63,8 @@ export async function getStats(): Promise<Stats> {
   return {
     completion: { claimedM: overall.claimed_m, totalM: overall.total_m, pct: pct(overall.claimed_m, overall.total_m) },
     gminas: gminaRows.map((g) => ({
-      gmina: g.gmina, claimedM: g.claimed_m, totalM: g.total_m, pct: pct(g.claimed_m, g.total_m),
+      gmina: displayGmina(g.gmina, rawGminaNames), claimedM: g.claimed_m, totalM: g.total_m,
+      pct: pct(g.claimed_m, g.total_m),
     })),
     xp: rides.xp,
     level,
