@@ -111,6 +111,7 @@ Strava → sync job → PostGIS matching → claims + stat/XP updates → map & 
 - Region: fixed 50 km around Reblino; expansion is v2.
 - Hosting: Vercel + Neon free tiers.
 - Backfill history on first sync: yes.
+- Out-of-region rides (2026-07-03): ALL rides count toward stats/XP (RPG-as-mirror); only in-region segments paint the map. Supersedes the earlier "backfills rides that touch the region" wording above.
 - UI language: English.
 - Single user; no auth beyond Strava connect + a simple app lock (e.g., single-user password or Vercel protection) — implementation detail.
 
