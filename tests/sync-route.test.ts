@@ -256,4 +256,74 @@ d('POST /api/sync', () => {
     expect(rows2.length).toBe(2);
     expect(rows2.every((r) => r.status === 'imported')).toBe(true);
   });
+
+  it('does not persist the cursor past page-1 todo items when a LATER stall page rate-limits', async () => {
+    await seedSegment(sql);
+
+    // Page 1 is full and contributes 2 importable rides (not enough to hit
+    // BATCH) among 48 runs. Page 2 is ALSO full but is a pure stall page —
+    // 50 more runs, nothing importable. Under the bug, a per-page stall
+    // check would see page 2 as "stalled" (it added nothing itself) and
+    // persist the cursor past page 2's end — which is past rideX/rideY from
+    // page 1, even though neither has been imported yet. Page 3's fetch
+    // then rate-limits before the import loop ever runs.
+    const runs1 = Array.from({ length: 48 }, (_, i) =>
+      activity({
+        sport_type: 'Run',
+        start_date: new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString(),
+      })
+    );
+    const rideX = activity({ start_date: new Date(Date.UTC(2026, 0, 1, 1, 0)).toISOString() });
+    const rideY = activity({ start_date: new Date(Date.UTC(2026, 0, 1, 1, 1)).toISOString() });
+    const page1 = [...runs1, rideX, rideY];
+    expect(page1.length).toBe(50);
+
+    const page2 = Array.from({ length: 50 }, (_, i) =>
+      activity({
+        sport_type: 'Run',
+        start_date: new Date(Date.UTC(2026, 0, 1, 2, i)).toISOString(),
+      })
+    );
+    expect(page2.length).toBe(50);
+
+    vi.mocked(strava.fetchActivities)
+      .mockResolvedValueOnce(page1)
+      .mockResolvedValueOnce(page2)
+      .mockRejectedValueOnce(strava.RATE_LIMITED); // page 3 fetch dies
+
+    const res1 = await POST();
+    expect(res1.status).toBe(429);
+    const body1 = await res1.json();
+    expect(body1).toEqual({ rateLimited: true });
+
+    // Neither ride was imported...
+    const rows1 = await sql`
+      SELECT 1 FROM rides WHERE strava_activity_id IN (${rideX.id}, ${rideY.id})`;
+    expect(rows1.length).toBe(0);
+    // ...and critically, the cursor must not have advanced past them — not
+    // even to page 2's end, which is what the per-page stall check bug did.
+    const [{ sync_cursor: cursorAfterFirst }] =
+      await sql`SELECT sync_cursor::bigint AS sync_cursor FROM strava_tokens WHERE id = 1`;
+    expect(Number(cursorAfterFirst)).toBe(0);
+
+    // Second request, fresh mocks: the same two importable rides come back
+    // (as they would from Strava, since the cursor never moved past them),
+    // followed by an empty page to end paging. Both must import.
+    vi.mocked(strava.fetchActivities).mockReset();
+    vi.mocked(strava.fetchActivities)
+      .mockResolvedValueOnce([rideX, rideY])
+      .mockResolvedValueOnce([]);
+    vi.mocked(strava.fetchStreams).mockReset()
+      .mockResolvedValue({ latlng: { data: FIXTURE_LATLNG } });
+
+    const res2 = await POST();
+    expect(res2.status).toBe(200);
+    const body2 = await res2.json();
+    expect(body2.imported).toBe(2);
+
+    const rows2 = await sql`
+      SELECT status FROM rides WHERE strava_activity_id IN (${rideX.id}, ${rideY.id})`;
+    expect(rows2.length).toBe(2);
+    expect(rows2.every((r) => r.status === 'imported')).toBe(true);
+  });
 });

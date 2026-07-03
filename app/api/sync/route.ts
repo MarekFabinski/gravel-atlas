@@ -40,23 +40,23 @@ export async function POST() {
       lastPageFull = activities.length >= PER_PAGE;
       if (activities.length === 0) break;
 
-      const todoBefore = todo.length;
       for (const a of activities) {
         if (!isImportable(a)) continue;
         const exists = await sql`SELECT 1 FROM rides WHERE strava_activity_id = ${a.id}`;
         if (!exists.length) todo.push(a);
         if (todo.length >= BATCH) break;
       }
-      // Only a page that contributed NOTHING to `todo` is a pure stall page
-      // — safe to persist the cursor past it. A page that contributed 1-4
-      // importable activities (not enough to hit BATCH) must NOT advance
-      // the persisted cursor here: those activities haven't been imported
-      // yet, and if this request dies before the import loop below runs
-      // (e.g. the next page fetch below throws RATE_LIMITED), persisting
-      // would leave them permanently behind the cursor with no trace. The
-      // in-memory `after` still advances so this request's own paging keeps
-      // moving forward.
-      const pageStalled = todo.length === todoBefore;
+      // Never persist the cursor past a pending todo item. It's not enough
+      // for THIS page to have contributed nothing — an earlier page in this
+      // same request may have added 1-4 importable activities (not enough
+      // to hit BATCH) that haven't been imported yet. If this request dies
+      // before the import loop below runs (e.g. the next page fetch below
+      // throws RATE_LIMITED), persisting past this page would leave those
+      // earlier activities permanently behind the cursor with no trace. So
+      // only persist when `todo` is empty across the whole request so far.
+      // The in-memory `after` still advances so this request's own paging
+      // keeps moving forward.
+      const pageStalled = todo.length === 0;
 
       if (todo.length >= BATCH) break;
       if (!lastPageFull) break;
