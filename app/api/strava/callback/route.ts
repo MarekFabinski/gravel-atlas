@@ -7,7 +7,12 @@ export async function GET(req: Request) {
   if (!code) {
     return NextResponse.redirect(new URL('/?strava=denied', process.env.APP_URL));
   }
-  const tokens = await exchangeCode(code);
-  await saveTokens(sql, tokens);
+  try {
+    const tokens = await exchangeCode(code);
+    await saveTokens(sql, tokens);
+  } catch (e) {
+    console.error('strava oauth callback failed:', e);
+    return NextResponse.redirect(new URL('/?strava=error', process.env.APP_URL));
+  }
   return NextResponse.redirect(new URL('/?strava=connected', process.env.APP_URL));
 }
