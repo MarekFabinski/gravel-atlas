@@ -169,25 +169,58 @@ export async function runSync(): Promise<SyncResult> {
   } catch (e) {
     if (e === RATE_LIMITED) return { rateLimited: true };
     throw e;
+  } finally {
+    // Only the caller that actually acquired the lease may clear it — a
+    // deferring call (leaseHeld === false) must never clear the owner's
+    // lease out from under it.
+    if (leaseHeld) {
+      await sql`UPDATE strava_tokens SET sync_lock_until = NULL WHERE id = 1`;
+    }
   }
 }
+
+export type RunSyncLoopOptions = {
+  maxRounds?: number;
+  budgetMs?: number;
+  syncFn?: () => Promise<SyncResult>;
+};
 
 /**
  * Drives runSync() to completion for background (webhook) use. Stops on
  * rateLimited — the next event or manual sync resumes from the watermark/
  * cursor, so nothing is lost. Never throws: this runs post-ACK where an
  * exception would only produce a noisy unhandled rejection.
+ *
+ * Also bounded by a wall-clock budget (default 45s): Vercel's waitUntil
+ * keeps this running only until the route's maxDuration (60s) — a backlog
+ * that fills all maxRounds rounds (each doing several Strava API calls) is
+ * expected to hit that ceiling and get hard-killed, possibly mid-import.
+ * Checking the deadline between rounds instead lets the loop return
+ * cleanly with work still pending; the next event or manual sync resumes
+ * from the watermark/cursor exactly like a rate-limit stop.
  */
-export async function runSyncLoop(maxRounds = 20): Promise<void> {
+export async function runSyncLoop(opts: RunSyncLoopOptions = {}): Promise<void> {
+  const { maxRounds = 20, budgetMs = 45_000, syncFn = runSync } = opts;
+  const deadline = Date.now() + budgetMs;
   try {
     for (let round = 0; round < maxRounds; round++) {
-      const result = await runSync();
+      const result = await syncFn();
       if ('rateLimited' in result) {
         console.warn('webhook sync: rate limited, stopping (will resume on next event)');
         return;
       }
       console.log(`webhook sync round ${round + 1}: imported=${result.imported} skipped=${result.skipped} more=${result.more}`);
       if (!result.more) return;
+      // Checked between rounds (before calling syncFn again), not before the
+      // very first call — a single round is always allowed to run to
+      // completion. Vercel's waitUntil work dies at the route's
+      // maxDuration; returning cleanly here (rather than getting hard-killed
+      // mid-import) leaves the watermark/cursor in a consistent state for
+      // the next event or manual sync to resume from.
+      if (Date.now() > deadline) {
+        console.warn(`webhook sync: stopped after ${round + 1} rounds — time budget (${budgetMs}ms) exceeded`);
+        return;
+      }
     }
     console.warn(`webhook sync: stopped after ${maxRounds} rounds with work remaining`);
   } catch (e) {
