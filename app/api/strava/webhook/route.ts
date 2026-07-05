@@ -24,9 +24,13 @@ export async function GET(req: Request) {
   const params = new URL(req.url).searchParams;
   const expected = process.env.STRAVA_VERIFY_TOKEN;
   const provided = params.get('hub.verify_token');
-  // Fail closed on unset/missing token; constant-time compare via HMAC
-  // digests (sessionToken maps arbitrary strings to fixed-length hex).
+  // Fail closed on unset/missing token or a wrong/missing hub.mode; constant-
+  // time compare via HMAC digests (sessionToken maps arbitrary strings to
+  // fixed-length hex). hub.mode is checked alongside the token rather than
+  // first, keeping the same fail-closed ordering (short-circuit doesn't
+  // leak which check failed).
   if (!expected || provided === null ||
+      params.get('hub.mode') !== 'subscribe' ||
       !tokensMatch(sessionToken(provided), sessionToken(expected))) {
     return NextResponse.json({ error: 'verification failed' }, { status: 401 });
   }

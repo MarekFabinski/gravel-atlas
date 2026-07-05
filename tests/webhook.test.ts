@@ -54,6 +54,21 @@ describe('GET /api/strava/webhook (subscription validation)', () => {
     expect(res.status).toBe(401);
   });
 
+  it('rejects a correct token with missing/wrong hub.mode with 401', async () => {
+    const resMissing = await GET(validationReq({
+      'hub.verify_token': 'test-verify-token',
+      'hub.challenge': 'x',
+    }));
+    expect(resMissing.status).toBe(401);
+
+    const resWrong = await GET(validationReq({
+      'hub.mode': 'unsubscribe',
+      'hub.verify_token': 'test-verify-token',
+      'hub.challenge': 'x',
+    }));
+    expect(resWrong.status).toBe(401);
+  });
+
   it('fails closed when STRAVA_VERIFY_TOKEN is unset', async () => {
     delete process.env.STRAVA_VERIFY_TOKEN;
     const res = await GET(validationReq({
