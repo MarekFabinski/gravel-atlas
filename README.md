@@ -42,7 +42,7 @@ npm run dev                                # http://localhost:3000
 ### Tests
 
 ```bash
-TEST_DATABASE_URL=postgres://postgres:dev@localhost:5432/gravel_test npm test   # full suite (51)
+TEST_DATABASE_URL=postgres://postgres:dev@localhost:5432/gravel_test npm test   # full suite (63)
 npm test                                                                        # unit-only (DB suites skip)
 ```
 
@@ -61,6 +61,6 @@ npm test                                                                        
 
 ## Post-v1 backlog
 
-Strava webhook auto-import (needs a proxy.ts matcher exclusion) · vector tiles if the segments payload feels slow on mobile · optional exclusion of `service` roads to tighten the game board · quests, bounty segments, additional regions (spec v2).
+vector tiles if the segments payload feels slow on mobile · optional exclusion of `service` roads to tighten the game board · quests, bounty segments, additional regions (spec v2).
 
 Design docs: `docs/superpowers/specs/` (spec) and `docs/superpowers/plans/` (implementation plan).
