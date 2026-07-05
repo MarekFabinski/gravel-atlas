@@ -42,7 +42,7 @@ npm run dev                                # http://localhost:3000
 ### Tests
 
 ```bash
-TEST_DATABASE_URL=postgres://postgres:dev@localhost:5432/gravel_test npm test   # full suite (63)
+TEST_DATABASE_URL=postgres://postgres:dev@localhost:5432/gravel_test npm test   # full suite (72)
 npm test                                                                        # unit-only (DB suites skip)
 ```
 
@@ -57,7 +57,7 @@ npm test                                                                        
 2. **Vercel:** `npx vercel login`, `npx vercel link --yes`, then set production env vars (`printf '%s' "<value>" | npx vercel env add <NAME> production` for every variable above except `TEST_DATABASE_URL`), and `npx vercel deploy --prod`. After the first deploy, set `APP_URL` to the assigned domain and redeploy.
 3. **Strava:** at strava.com/settings/api set *Authorization Callback Domain* to the production domain (no scheme/path). `localhost` keeps working for dev.
 4. **Connect:** open `<APP_URL>/api/strava/connect` in a logged-in browser, approve. Then tap **Sync rides** — historical backfill imports in batches; a "rate limited" pause is normal (Strava allows ~100 requests/15 min), just retry after 15 minutes and it resumes where it stopped.
-5. **Webhook (auto-import):** set `STRAVA_VERIFY_TOKEN` (random hex) in `.env.local` and Vercel production env, deploy, then `npm run webhook:create` with `APP_URL` pointing at production. Verify with `npm run webhook:view`. Rides now import automatically minutes after upload; the Sync button remains as fallback. `npm run webhook:delete` unsubscribes.
+5. **Webhook (auto-import):** Complete the initial Sync backfill (step 4) first — set `STRAVA_VERIFY_TOKEN` (random hex) in `.env.local` and Vercel production env, deploy, then `npm run webhook:create` with `APP_URL` pointing at production. Verify with `npm run webhook:view`. Rides now import automatically minutes after upload; the Sync button remains as fallback. `npm run webhook:delete` unsubscribes.
 
 ## Post-v1 backlog
 
