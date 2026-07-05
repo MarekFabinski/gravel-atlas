@@ -30,7 +30,7 @@ Rides appear in Gravel Atlas automatically minutes after finishing, without tapp
 ## Design
 
 ### The doorbell principle
-The webhook event payload is used ONLY as a trigger signal. On a valid-shaped `create` event for an `activity`, the endpoint runs the same sync routine the manual button uses (fetch new activities after watermark/cursor → import → match → score). The payload's `object_id` is not fetched directly, not stored, and not trusted. A forged POST can at worst cause one polling run against the Strava API using our own token — no data injection is possible.
+The webhook event payload is used ONLY as a trigger signal. On a valid-shaped `create` event for an `activity`, the endpoint runs the same sync routine the manual button uses (fetch new activities after watermark/cursor → import → match → score). The payload's `object_id` is not fetched directly, not stored, and not trusted. A forged POST triggers the same sync loop against the Strava API using our own token — no data injection is possible; see Security for how repeated spam is bounded.
 
 ### Components
 
@@ -58,7 +58,8 @@ Strava event → `POST /api/strava/webhook` → 200 ACK → (background) `runSyn
 - `waitUntil` unavailability (local dev): the sync promise is started without awaiting; acceptable for dev.
 
 ## Security
-- Endpoint is public (excluded from app lock) but: GET requires the verify token; POST triggers only an API poll with our own credentials and never ingests payload data (doorbell principle). `STRAVA_VERIFY_TOKEN` never appears in responses.
+- Endpoint is public (excluded from app lock) but: GET requires the verify token (and `hub.mode=subscribe`); POST triggers only an API poll with our own credentials and never ingests payload data (doorbell principle). `STRAVA_VERIFY_TOKEN` never appears in responses.
+- A forged POST starts a sync loop (bounded by the single-flight lease + the 45s background time budget); repeated spam can at worst burn Strava API quota, which self-heals in 15 minutes (Strava's rate-limit window).
 
 ## Testing
 - Unit tests (`tests/webhook.test.ts`, mocked `lib/syncRunner`): GET echoes challenge with correct token; GET 401s with wrong/missing token; POST `activity`/`create` → 200 and runner invoked once; POST update/delete/athlete/malformed → 200 and runner not invoked.
@@ -70,3 +71,4 @@ Strava event → `POST /api/strava/webhook` → 200 ACK → (background) `runSyn
 - Doorbell principle — event payload never trusted or stored.
 - Sync loop runs post-ACK via Vercel `waitUntil`; no queue infrastructure (YAGNI for one rider).
 - Manual Sync button retained as fallback.
+- Single-flight lease (`strava_tokens.sync_lock_until`) serializes all sync entry points; 45s background budget under Vercel's 60s window.

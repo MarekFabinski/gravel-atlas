@@ -71,13 +71,14 @@ d('POST /api/sync', () => {
     // tests/helpers/db.ts), so the single-row token/cursor state carries
     // over between tests unless we reset it here ourselves.
     await sql`
-      INSERT INTO strava_tokens (id, access_token, refresh_token, expires_at, sync_cursor)
-      VALUES (1, 'test-at', 'test-rt', now() + interval '1 hour', 0)
+      INSERT INTO strava_tokens (id, access_token, refresh_token, expires_at, sync_cursor, sync_lock_until)
+      VALUES (1, 'test-at', 'test-rt', now() + interval '1 hour', 0, NULL)
       ON CONFLICT (id) DO UPDATE SET
         access_token = EXCLUDED.access_token,
         refresh_token = EXCLUDED.refresh_token,
         expires_at = EXCLUDED.expires_at,
-        sync_cursor = 0`;
+        sync_cursor = 0,
+        sync_lock_until = NULL`;
 
     // Fresh module registry so the route's `import sql from '@/lib/db'`
     // resolves to a newly-evaluated instance (mirrors tests/stats.test.ts's
@@ -325,5 +326,63 @@ d('POST /api/sync', () => {
       SELECT status FROM rides WHERE strava_activity_id IN (${rideX.id}, ${rideY.id})`;
     expect(rows2.length).toBe(2);
     expect(rows2.every((r) => r.status === 'imported')).toBe(true);
+  });
+
+  describe('single-flight sync lease', () => {
+    it('defers to an in-flight sync when the lease is held, without importing or clearing the lease', async () => {
+      await seedSegment(sql);
+      await sql`UPDATE strava_tokens SET sync_lock_until = now() + interval '60 seconds' WHERE id = 1`;
+
+      const a = activity();
+      vi.mocked(strava.fetchActivities).mockResolvedValueOnce([a]);
+      vi.mocked(strava.fetchStreams).mockResolvedValueOnce({ latlng: { data: FIXTURE_LATLNG } });
+
+      const res = await POST();
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toEqual({ imported: 0, skipped: 0, more: false });
+
+      const rides = await sql`SELECT 1 FROM rides WHERE strava_activity_id = ${a.id}`;
+      expect(rides.length).toBe(0);
+
+      // The deferring call must not clear the owner's lease.
+      const [{ locked }] = await sql`
+        SELECT sync_lock_until > now() AS locked FROM strava_tokens WHERE id = 1`;
+      expect(locked).toBe(true);
+    });
+
+    it('runs normally and releases the lease when it was NULL beforehand', async () => {
+      await seedSegment(sql);
+      const a = activity();
+      vi.mocked(strava.fetchActivities).mockResolvedValueOnce([a]);
+      vi.mocked(strava.fetchStreams).mockResolvedValueOnce({ latlng: { data: FIXTURE_LATLNG } });
+
+      const res = await POST();
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toEqual({ imported: 1, skipped: 0, more: false });
+
+      const [{ sync_lock_until }] = await sql`
+        SELECT sync_lock_until FROM strava_tokens WHERE id = 1`;
+      expect(sync_lock_until).toBeNull();
+    });
+
+    it('treats an expired lease as free and proceeds normally', async () => {
+      await seedSegment(sql);
+      await sql`UPDATE strava_tokens SET sync_lock_until = now() - interval '10 seconds' WHERE id = 1`;
+
+      const a = activity();
+      vi.mocked(strava.fetchActivities).mockResolvedValueOnce([a]);
+      vi.mocked(strava.fetchStreams).mockResolvedValueOnce({ latlng: { data: FIXTURE_LATLNG } });
+
+      const res = await POST();
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toEqual({ imported: 1, skipped: 0, more: false });
+
+      const [{ sync_lock_until }] = await sql`
+        SELECT sync_lock_until FROM strava_tokens WHERE id = 1`;
+      expect(sync_lock_until).toBeNull();
+    });
   });
 });

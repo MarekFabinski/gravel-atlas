@@ -1,0 +1,11 @@
+-- Single-flight lease for runSync(). Concurrent sync entry points (webhook
+-- events, the manual Sync button, or several rapid-fire webhook events) can
+-- otherwise race matchRide's multi-row claims INSERT with no deterministic
+-- lock ordering across the two overlapping transactions — a classic
+-- Postgres deadlock that leaves the victim ride permanently 'failed'.
+-- Session-level advisory locks are unsafe here: Neon's pooled connection is
+-- pgbouncer-style transaction-mode pooling, so a session lock can outlive
+-- the physical connection it was taken on and never reliably release.
+-- Instead runSync() does an atomic test-and-set on this column (see
+-- lib/syncRunner.ts); a NULL/expired value means the lease is free.
+ALTER TABLE strava_tokens ADD COLUMN sync_lock_until TIMESTAMPTZ;

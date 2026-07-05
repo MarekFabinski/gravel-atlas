@@ -17,5 +17,7 @@ export const config = {
   // Segment-anchored exclusions: `login(?:/|$)` matches "login" and
   // "login/…" but not "loginout", so lookalike paths still go through the
   // lock instead of being accidentally excluded by a bare prefix match.
-  matcher: ['/((?!login(?:/|$)|api/login(?:/|$)|_next|favicon.ico).*)'],
+  // `api/strava/webhook` is excluded too: Strava calls it without a
+  // cookie, and the endpoint has its own verify-token/doorbell protections.
+  matcher: ['/((?!login(?:/|$)|api/login(?:/|$)|api/strava/webhook(?:/|$)|_next|favicon.ico).*)'],
 };
