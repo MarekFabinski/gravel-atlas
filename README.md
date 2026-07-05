@@ -1,36 +1,64 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🚵 Gravel Atlas
 
-## Getting Started
+A personal, single-user web app that gamifies gravel cycling around Reblino, Pomerania. Rides recorded on Strava are imported and matched against the real OSM road network; every road segment you ride gets painted on the map. Exploration feeds an RPG character sheet: XP, levels, Pomeranian titles, and a four-stat radar (Explorer / Endurance / Grit / Climber).
 
-First, run the development server:
+**Production:** https://gravel-atlas-two.vercel.app (password-locked, single user)
+
+## How it works
+
+- **Game board:** all rideable roads/tracks within 50 km of Reblino (~82k segments, 15,500 km), imported from OpenStreetMap and split at intersections. Grey = unridden, orange = claimed.
+- **Claiming rule:** a segment is claimed when ≥70% of its length lies within a 20 m buffer of a ride's GPS track (PostGIS, EPSG:2180). First ride wins; thresholds in `lib/config.ts`.
+- **XP economy:** 1 XP per km ridden + 8 XP per km of newly claimed segment length. Level `n` starts at `(n-1)² × 100` XP.
+- **Stats:** Explorer = segments claimed; Endurance = km + long-ride bonus (>50 km); Grit = unpaved km; Climber = meters climbed. All rides count toward stats; only in-region segments paint the map.
+
+## Stack
+
+Next.js 16 (App Router) · Postgres + PostGIS (Neon in prod, Docker locally) · MapLibre GL · Strava API (OAuth, free tier) · Vitest. Hosted on Vercel (free tier).
+
+## Local development
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+docker compose up -d                       # local PostGIS (gravel + gravel_test DBs)
+docker compose exec db createdb -U postgres gravel_test   # first time only
+cp .env.example .env.local                 # then fill in values (see below)
+npm install
+npm run migrate                            # apply migrations/*.sql
+npm run import:network                     # load OSM road network (~5 min, Overpass)
+npm run dev                                # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Environment variables (`.env.local`)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Variable | Purpose |
+|----------|---------|
+| `DATABASE_URL` | Postgres connection (local Docker or Neon) |
+| `TEST_DATABASE_URL` | `gravel_test` DB; integration tests skip when unset |
+| `APP_PASSWORD` | The app-lock password (login page) |
+| `APP_URL` | Base URL for Strava OAuth redirects |
+| `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` | From strava.com/settings/api |
+| `NEXT_PUBLIC_REGION_LAT` / `NEXT_PUBLIC_REGION_LON` / `REGION_RADIUS_M` | Game-board center + radius |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Tests
 
-## Learn More
+```bash
+TEST_DATABASE_URL=postgres://postgres:dev@localhost:5432/gravel_test npm test   # full suite (51)
+npm test                                                                        # unit-only (DB suites skip)
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Deployment runbook (Vercel + Neon)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. **Neon:** create a free project (EU region). Migrations create the PostGIS extension automatically. From your machine:
+   ```bash
+   MIGRATE_DATABASE_URL='<neon-pooled-url>' npm run migrate
+   DATABASE_URL='<neon-pooled-url>' npx tsx --env-file=.env.local scripts/import-network.ts
+   ```
+   Use the **pooled** connection string (host contains `-pooler`).
+2. **Vercel:** `npx vercel login`, `npx vercel link --yes`, then set production env vars (`printf '%s' "<value>" | npx vercel env add <NAME> production` for every variable above except `TEST_DATABASE_URL`), and `npx vercel deploy --prod`. After the first deploy, set `APP_URL` to the assigned domain and redeploy.
+3. **Strava:** at strava.com/settings/api set *Authorization Callback Domain* to the production domain (no scheme/path). `localhost` keeps working for dev.
+4. **Connect:** open `<APP_URL>/api/strava/connect` in a logged-in browser, approve. Then tap **Sync rides** — historical backfill imports in batches; a "rate limited" pause is normal (Strava allows ~100 requests/15 min), just retry after 15 minutes and it resumes where it stopped.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Post-v1 backlog
 
-## Deploy on Vercel
+Strava webhook auto-import (needs a proxy.ts matcher exclusion) · vector tiles if the segments payload feels slow on mobile · optional exclusion of `service` roads to tighten the game board · quests, bounty segments, additional regions (spec v2).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Design docs: `docs/superpowers/specs/` (spec) and `docs/superpowers/plans/` (implementation plan).
