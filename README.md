@@ -6,7 +6,7 @@ A personal, single-user web app that gamifies gravel cycling around Reblino, Pom
 
 ## How it works
 
-- **Game board:** all rideable roads/tracks within 50 km of Reblino (~82k segments, 15,500 km), imported from OpenStreetMap and split at intersections. Grey = unridden, orange = claimed.
+- **Game board:** all rideable roads/tracks within 50 km of Reblino (~58k segments, ~14,200 km), imported from OpenStreetMap and split at intersections. Service roads (driveways, parking aisles) are excluded. Grey = unridden, orange = claimed.
 - **Claiming rule:** a segment is claimed when ≥70% of its length lies within a 20 m buffer of a ride's GPS track (PostGIS, EPSG:2180). First ride wins; thresholds in `lib/config.ts`.
 - **XP economy:** 1 XP per km ridden + 8 XP per km of newly claimed segment length. Level `n` starts at `(n-1)² × 100` XP.
 - **Stats:** Explorer = segments claimed; Endurance = km + long-ride bonus (>50 km); Grit = unpaved km; Climber = meters climbed. All rides count toward stats; only in-region segments paint the map.
