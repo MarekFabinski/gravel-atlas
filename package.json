@@ -9,6 +9,9 @@
     "lint": "eslint",
     "migrate": "tsx --env-file=.env.local scripts/migrate.ts",
     "import:network": "tsx --env-file=.env.local scripts/import-network.ts",
+    "webhook:create": "tsx --env-file=.env.local scripts/strava-webhook.ts create",
+    "webhook:view": "tsx --env-file=.env.local scripts/strava-webhook.ts view",
+    "webhook:delete": "tsx --env-file=.env.local scripts/strava-webhook.ts delete",
     "test": "vitest run"
   },
   "dependencies": {

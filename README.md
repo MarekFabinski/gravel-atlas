@@ -36,6 +36,7 @@ npm run dev                                # http://localhost:3000
 | `APP_PASSWORD` | The app-lock password (login page) |
 | `APP_URL` | Base URL for Strava OAuth redirects |
 | `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` | From strava.com/settings/api |
+| `STRAVA_VERIFY_TOKEN` | Webhook validation handshake secret |
 | `NEXT_PUBLIC_REGION_LAT` / `NEXT_PUBLIC_REGION_LON` / `REGION_RADIUS_M` | Game-board center + radius |
 
 ### Tests
@@ -56,6 +57,7 @@ npm test                                                                        
 2. **Vercel:** `npx vercel login`, `npx vercel link --yes`, then set production env vars (`printf '%s' "<value>" | npx vercel env add <NAME> production` for every variable above except `TEST_DATABASE_URL`), and `npx vercel deploy --prod`. After the first deploy, set `APP_URL` to the assigned domain and redeploy.
 3. **Strava:** at strava.com/settings/api set *Authorization Callback Domain* to the production domain (no scheme/path). `localhost` keeps working for dev.
 4. **Connect:** open `<APP_URL>/api/strava/connect` in a logged-in browser, approve. Then tap **Sync rides** — historical backfill imports in batches; a "rate limited" pause is normal (Strava allows ~100 requests/15 min), just retry after 15 minutes and it resumes where it stopped.
+5. **Webhook (auto-import):** set `STRAVA_VERIFY_TOKEN` (random hex) in `.env.local` and Vercel production env, deploy, then `npm run webhook:create` with `APP_URL` pointing at production. Verify with `npm run webhook:view`. Rides now import automatically minutes after upload; the Sync button remains as fallback. `npm run webhook:delete` unsubscribes.
 
 ## Post-v1 backlog
 
