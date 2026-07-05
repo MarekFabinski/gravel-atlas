@@ -20,8 +20,38 @@ const MAX_PAGES = 5;
 const epoch = (iso: string) => Math.floor(new Date(iso).getTime() / 1000);
 
 export async function runSync(): Promise<SyncResult> {
+  let leaseHeld = false;
   try {
     const token = await getValidToken(sql);
+
+    // Single-flight lease: the webhook loop and the manual Sync button (or
+    // several rapid-fire webhook events) can call runSync() concurrently.
+    // matchRide's multi-row claims INSERT has no deterministic ordering
+    // across two overlapping transactions touching overlapping segments,
+    // which is a classic recipe for a Postgres deadlock — the victim ride
+    // gets stuck 'failed' forever. Session-level advisory locks would be
+    // the usual fix, but Neon's pooled connection (the one this app uses)
+    // is pgbouncer-style transaction-mode pooling: a session lock can be
+    // taken on one physical connection and "held" by a client that later
+    // gets handed a *different* connection, so it never reliably releases.
+    // Instead we lease a plain row: atomically test-and-set
+    // strava_tokens.sync_lock_until only if it's unset or expired. Losing
+    // the race just means another sync is already in flight — deferring to
+    // it is semantically perfect for a doorbell (the in-flight run will
+    // pick up whatever this call would have seen anyway). A hard kill
+    // (Vercel timeout, crash) self-heals once the lease expires: 90s here
+    // comfortably outlasts Fix 1's 45s background budget plus one round's
+    // worst-case in-flight work.
+    const [lease] = await sql`
+      UPDATE strava_tokens
+      SET sync_lock_until = now() + interval '90 seconds'
+      WHERE id = 1 AND (sync_lock_until IS NULL OR sync_lock_until < now())
+      RETURNING 1`;
+    if (!lease) {
+      return { imported: 0, skipped: 0, more: false };
+    }
+    leaseHeld = true;
+
     const [{ last }] = await sql`
       SELECT COALESCE(EXTRACT(EPOCH FROM MAX(started_at))::bigint, 0) AS last FROM rides`;
     const [{ cursor }] = await sql`SELECT sync_cursor::bigint AS cursor FROM strava_tokens WHERE id = 1`;

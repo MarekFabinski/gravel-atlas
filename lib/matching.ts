@@ -28,10 +28,15 @@ export async function matchRide(
       WHERE ST_Intersects(s.geom_m, buf.b)
     ),
     new_claims AS (
+      -- ORDER BY id gives every concurrent matchRide call the same lock
+      -- acquisition order for overlapping segments — free deadlock
+      -- insurance on top of the single-flight sync lease (belt & suspenders:
+      -- the lease should already serialize these, but this costs nothing).
       INSERT INTO claims (segment_id, ride_id, claimed_at)
       SELECT id, ${rideId}, ${claimedAt}
       FROM cov
       WHERE overlap_m / NULLIF(length_m, 0) >= ${COVERAGE_MIN}
+      ORDER BY id
       ON CONFLICT (segment_id) DO NOTHING
       RETURNING segment_id
     )
