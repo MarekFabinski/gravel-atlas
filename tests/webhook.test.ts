@@ -90,4 +90,14 @@ describe('POST /api/strava/webhook (events)', () => {
     expect(res.status).toBe(200);
     expect(runSyncLoop).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['null primitive', 'null'],
+    ['number', '42'],
+    ['array', '[1,2]'],
+  ])('ACKs non-object JSON (%s) without triggering sync', async (_label, body) => {
+    const res = await POST(eventReq(body));
+    expect(res.status).toBe(200);
+    expect(runSyncLoop).not.toHaveBeenCalled();
+  });
 });

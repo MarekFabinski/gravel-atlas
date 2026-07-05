@@ -8,8 +8,8 @@ export const maxDuration = 60;
 /**
  * Keeps the sync running after the 200 ACK is sent. On Vercel, waitUntil
  * extends the function's lifetime; locally (npm run dev, vitest) there is no
- * request context, so we fall back to fire-and-forget — the promise is
- * already running either way, and it never rejects (runSyncLoop catches).
+ * request context, so waitUntil silently no-ops — the promise is already
+ * running either way and runs unattached (runSyncLoop catches any errors).
  */
 function scheduleBackground(work: Promise<void>) {
   try {
@@ -42,7 +42,11 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   let event: { object_type?: string; aspect_type?: string } = {};
   try {
-    event = await req.json();
+    event = (await req.json()) ?? {};
+    // Normalize non-object JSON (numbers, strings, arrays) to empty object
+    if (typeof event !== 'object' || Array.isArray(event)) {
+      event = {};
+    }
   } catch {
     // malformed body — ACK and ignore
   }
